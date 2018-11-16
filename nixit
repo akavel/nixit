@@ -1,1 +1,11 @@
 #!/usr/bin/env bash
+
+set -euo pipefail
+
+# TODO: use shellcheck
+
+# FIXME: load /etc/nixos/configuration.nix
+# FIXME: evaluate it (see `nixos-rebuild switch`)
+# FIXME: create symlinks (see `home-manager switch`)
+# TODO: LATER: install itself in /usr/sbin/nixit
+# FIXME: activate/restart/reload systemd services (see `nixos-rebuild switch`, maybe also `home-manager switch`)
