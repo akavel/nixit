@@ -4,7 +4,14 @@ set -euo pipefail
 
 # TODO: use shellcheck
 
+profile=/nix/var/nix/profiles/nixit
+
+# TODO: LATER: verify we're run as root ? though initial steps can probably be done without that
+
 # FIXME: load /etc/nixos/configuration.nix
+# FIXME: - we need a Nix expression that will generate the activation script, based on /etc/nixos/configuration.nix
+# TODO: LATER: for activation script, see also home-manager's "DAG" system, as suggested by rycee
+# TODO: LATER: add some options in /etc/nixos/configuration.nix or somewhere else, which will allow only selectively enabling services etc.
 # FIXME: evaluate it (see `nixos-rebuild switch`)
 # FIXME: create symlinks (see `home-manager switch`)
 # TODO: LATER: install itself in /usr/sbin/nixit
@@ -24,3 +31,4 @@ set -euo pipefail
 #         exit 1
 #     fi
 
+# 'switch-to-configuration' is defined in nixos/modules/system/activation/top-level.nix
