@@ -1,3 +1,38 @@
+#
+# USAGE: nixit-actions NEW_GENERATION [OLD_GENERATION]
+#
+# This script builds a list of actions to perform on files, based on file
+# metadata in directory trees pointed to by the paths specified as arguments.
+#
+# The script analyzes the following tree "roots":
+#  - $OLD_GENERATION/managed/   - files carried over from old Nixit generation
+#  - $NEW_GENERATION/precond/   - declarations of preexisting files, that will become managed
+#  - $NEW_GENERATION/managed/   - files comprising the new Nixit generation
+#  - $NEW_GENERATION/disowned/  - files that will become disowned (unmanaged) in the new generation
+#
+# In each of the roots:
+#  - $root/del/   - lists files that should be deleted (absent) on disk
+#  - $root/exist/ - contains files that should exist on disk, including their contents
+#
+# For each unique relative path in the directories listed above, the script
+# will emit one of the following characters describing an action, followed by
+# <space> and relative path ($REL_PATH). The target file before activation
+# should match the state listed as "before", and the activation should make it
+# match the state listed as "after".
+#
+#  A - Assimilate:
+#      before: $NEW_GENERATION/precond/{del,exist}/$REL_PATH
+#      after:  $NEW_GENERATION/managed/{del,exist}/$REL_PATH
+#  M - Modify managed:
+#      before: $OLD_GENERATION/managed/{del,exist}/$REL_PATH
+#      after:  $NEW_GENERATION/managed/{del,exist}/$REL_PATH
+#  D - Disown:
+#      before: $OLD_GENERATION/managed/{del,exist}/$REL_PATH
+#      after:  $NEW_GENERATION/disowned/{del,exist}/$REL_PATH
+#  X - modify eXternal:
+#      before: $NEW_GENERATION/precond/{del,exist}/$REL_PATH
+#      after:  $NEW_GENERATION/disowned/{del,exist}/$REL_PATH
+
 {.experimental: "codeReordering".}
 import strutils
 import os
