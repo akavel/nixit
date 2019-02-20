@@ -1,5 +1,7 @@
 {.experimental: "codeReordering".}
-import patty
+import strutils
+import os
+import patty except match
 import gara
 
 type
@@ -20,7 +22,10 @@ type
     before: Root
     after: Root
   ActionKind* = enum
-    Assimilate, Modify, Disown
+    Assimilate = "A",
+    ModifyManaged = "M",
+    Disown = "D",
+    ModifyUnmanaged = "X"
 
   FileStatus = enum
     Deleted, Existing
@@ -32,15 +37,29 @@ const
   exist = "exist"
 
 
+proc `/`(root: Root, path: string): string =
+  return root.string / path
+
+iterator walkRecRelative(dir: string): string =
+  const
+    yieldFilter = {pcFile, pcLinkToFile}
+    followFilter = {pcDir, pcLinkToDir}
+  for f in walkDirRec(dir, yieldFilter, followFilter):
+    var relpath = f
+    relpath.removePrefix(dir)
+    yield relpath
+
 iterator walkRec(root: Root): (string, FileStatus) =
   const
     yieldFilter = {pcFile, pcLinkToFile}
     followFilter = {pcDir, pcLinkToDir}
-  for f in walkDirRec(root / del, yieldFilter, followFilter, true):
+  for f in walkRecRelative(root / del):
+  # for f in walkDirRec(root / del, yieldFilter, followFilter, true):
     if existsFile(root / exist / f):
-      raise newException(FileConfusionError, "file must not be present in two places: $#/{del,exist}/$#" % [root, f])
+      raise newException(FileConfusionError, "file must not be present in two places: $#/{del,exist}/$#" % [root.string, f])
     yield (f, Deleted)
-  for f in walkDirRec(root / exist, yieldFilter, followFilter, true):
+  for f in walkRecRelative(root / exist):
+  # for f in walkDirRec(root / exist, yieldFilter, followFilter, true):
     yield (f, Existing)
 
 proc has(root: Root, file: string): bool =
@@ -48,7 +67,7 @@ proc has(root: Root, file: string): bool =
     hasdel =   existsFile(root / del / file)
     hasexist = existsFile(root / exist / file)
   if hasdel and hasexist:
-    raise newException(FileConfusionError, "file must not be present in two places: $#/{del,exist}/$#" % [root, file])
+    raise newException(FileConfusionError, "file must not be present in two places: $#/{del,exist}/$#" % [root.string, file])
   return hasdel or hasexist
 
 
@@ -67,24 +86,21 @@ iterator walkDistinctRec*(roots: Roots): (string, FileStatus) =
 
 
 proc getAction*(roots: Roots, file: string): Action =
-  var status = 0
-  if roots.old_managed.has(file):  status |= 0b1000
-  if roots.new_precond.has(file):  status |= 0b0100
-  if roots.new_managed.has(file):  status |= 0b0010
-  if roots.new_disowned.has(file): status |= 0b0001
-  # case status
-  # of 0b0000: raise newException(FileConfusionError, "file not found in any root: " & file)
-  # of 
-  match((...)):
+  let status = (
+    roots.old_managed.has(file),
+    roots.new_precond.has(file),
+    roots.new_managed.has(file),
+    roots.new_disowned.has(file))
+  match status:
     (false, false, false, false): raise newException(FileConfusionError, "file not found in any root: " & file)
     (_, _, true, true):           raise newException(FileConfusionError, "file cannot become both managed and disowned: " & file)
     (_, _, false, false):         raise newException(FileConfusionError, "don't know what to do with file, please specify managed or disowned: " & file)
     (true, true, _, _):           raise newException(FileConfusionError, "for previously managed file, precondition should not be provided: " & file)
     (false, false, _, _):         raise newException(FileConfusionError, "for previously unmanaged file, precondition must be provided: " & file)
     (false, true, true, false): return (Assimilate, roots.new_precond, roots.new_managed)
-    (true, false, true, false): return (Modify, roots.old_managed, roots.new_managed)
+    (true, false, true, false): return (ModifyManaged, roots.old_managed, roots.new_managed)
     (true, false, false, true): return (Disown, roots.old_managed, roots.new_disowned)
-    (false, true, false, true): return (Modify, roots.new_precond, roots.new_disowned)
+    (false, true, false, true): return (ModifyUnmanaged, roots.new_precond, roots.new_disowned)
 
 # proc precheck(prev, next: FileStatus) =
 #   ## Check precondition.
