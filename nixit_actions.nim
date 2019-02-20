@@ -1,37 +1,38 @@
-#
-# USAGE: nixit-actions NEW_GENERATION [OLD_GENERATION]
-#
-# This script builds a list of actions to perform on files, based on file
-# metadata in directory trees pointed to by the paths specified as arguments.
-#
-# The script analyzes the following tree "roots":
-#  - $OLD_GENERATION/managed/   - files carried over from old Nixit generation
-#  - $NEW_GENERATION/precond/   - declarations of preexisting files, that will become managed
-#  - $NEW_GENERATION/managed/   - files comprising the new Nixit generation
-#  - $NEW_GENERATION/disowned/  - files that will become disowned (unmanaged) in the new generation
-#
-# In each of the roots:
-#  - $root/del/   - lists files that should be deleted (absent) on disk
-#  - $root/exist/ - contains files that should exist on disk, including their contents
-#
-# For each unique relative path in the directories listed above, the script
-# will emit one of the following characters describing an action, followed by
-# <space> and relative path ($REL_PATH). The target file before activation
-# should match the state listed as "before", and the activation should make it
-# match the state listed as "after".
-#
-#  A - Assimilate:
-#      before: $NEW_GENERATION/precond/{del,exist}/$REL_PATH
-#      after:  $NEW_GENERATION/managed/{del,exist}/$REL_PATH
-#  M - Modify managed:
-#      before: $OLD_GENERATION/managed/{del,exist}/$REL_PATH
-#      after:  $NEW_GENERATION/managed/{del,exist}/$REL_PATH
-#  D - Disown:
-#      before: $OLD_GENERATION/managed/{del,exist}/$REL_PATH
-#      after:  $NEW_GENERATION/disowned/{del,exist}/$REL_PATH
-#  X - modify eXternal:
-#      before: $NEW_GENERATION/precond/{del,exist}/$REL_PATH
-#      after:  $NEW_GENERATION/disowned/{del,exist}/$REL_PATH
+var usage = """
+USAGE: nixit-actions NEW_GENERATION [OLD_GENERATION]
+
+This script builds a list of actions to perform on files, based on file
+metadata in directory trees pointed to by the paths specified as arguments.
+
+The script analyzes the following tree "roots":
+ - $OLD_GENERATION/managed/   - files carried over from old Nixit generation
+ - $NEW_GENERATION/precond/   - declarations of preexisting files, that will become managed
+ - $NEW_GENERATION/managed/   - files comprising the new Nixit generation
+ - $NEW_GENERATION/disowned/  - files that will become disowned (unmanaged) in the new generation
+
+In each of the roots:
+ - $root/del/   - lists files that should be deleted (absent) on disk
+ - $root/exist/ - contains files that should exist on disk, including their contents
+
+For each unique relative path in the directories listed above, the script
+will emit one of the following characters describing an action, followed by
+<space> and relative path ($REL_PATH). The target file before activation
+should match the state listed as "before", and the activation should make it
+match the state listed as "after".
+
+ A - Assimilate:
+     before: $NEW_GENERATION/precond/{del,exist}/$REL_PATH
+     after:  $NEW_GENERATION/managed/{del,exist}/$REL_PATH
+ M - Modify managed:
+     before: $OLD_GENERATION/managed/{del,exist}/$REL_PATH
+     after:  $NEW_GENERATION/managed/{del,exist}/$REL_PATH
+ D - Disown:
+     before: $OLD_GENERATION/managed/{del,exist}/$REL_PATH
+     after:  $NEW_GENERATION/disowned/{del,exist}/$REL_PATH
+ X - modify eXternal:
+     before: $NEW_GENERATION/precond/{del,exist}/$REL_PATH
+     after:  $NEW_GENERATION/disowned/{del,exist}/$REL_PATH
+"""
 
 {.experimental: "codeReordering".}
 import strutils
@@ -43,7 +44,7 @@ type
   FileConfusionError* = object of CatchableError
 
   Root* = distinct string
-  Roots* = tuple
+  Roots* = object
     ## Paths to roots of four directory trees. The same relative path in any of those
     ## describes the same file, but at a different phase of life.
     ## Each Root contains a "del" and "exist" subdirectory, corresponding to FileStatus.
@@ -65,23 +66,43 @@ type
   FileStatus = enum
     Deleted, Existing
 
-
-
 const
   del = "del"
   exist = "exist"
+
+
+proc main() =
+  if paramCount() == 0 or paramStr(1) == "--help":
+    stderr.write(usage)
+    quit(QuitFailure)
+  if paramCount() > 2:
+    stderr.write("error: too many arguments (must use 1 or 2)")
+    quit(QuitFailure)
+  let
+    newGen = paramStr(1)
+    oldGen = if paramCount() == 2: paramStr(2) else: "/dev/null"
+    roots = Roots(
+      old_managed: Root(oldGen / "managed"),
+      new_precond: Root(newGen / "precond"),
+      new_managed: Root(newGen / "managed"),
+      new_disowned: Root(newGen / "disowned"))
+  for relPath in walkDistinctRec(roots):
+    let action = roots.getAction(relPath)
+    echo $action & " " & relPath
+
 
 
 proc `/`(root: Root, path: string): string =
   return root.string / path
 
 iterator walkRecRelative(dir: string): string =
+  let prefix = if dir.endsWith"/": dir else: dir & "/"
   const
     yieldFilter = {pcFile, pcLinkToFile}
     followFilter = {pcDir, pcLinkToDir}
   for f in walkDirRec(dir, yieldFilter, followFilter):
     var relpath = f
-    relpath.removePrefix(dir)
+    relpath.removePrefix(prefix)
     yield relpath
 
 iterator walkRec(root: Root): (string, FileStatus) =
@@ -106,7 +127,7 @@ proc has(root: Root, file: string): bool =
   return hasdel or hasexist
 
 
-iterator walkDistinctRec*(roots: Roots): (string, FileStatus) =
+iterator walkDistinctRec*(roots: Roots): string =
   let rootList = [roots.old_managed, roots.new_precond, roots.new_managed, roots.new_disowned]
 
   proc alreadyEmitted(file: string, i: int): bool =
@@ -117,7 +138,7 @@ iterator walkDistinctRec*(roots: Roots): (string, FileStatus) =
   for i, root in rootList:
     for file, status in root.walkRec():
       if not alreadyEmitted(file, i):
-        yield (file, status)
+        yield file
 
 
 proc getAction*(roots: Roots, file: string): Action =
@@ -137,47 +158,5 @@ proc getAction*(roots: Roots, file: string): Action =
     (true, false, false, true): return (Disown, roots.old_managed, roots.new_disowned)
     (false, true, false, true): return (ModifyUnmanaged, roots.new_precond, roots.new_disowned)
 
-# proc precheck(prev, next: FileStatus) =
-#   ## Check precondition.
-
-
-# variant FileStatus:
-#   Unmanaged(expectData: string, expectAttrs: uint64)  # External?
-#   Deleted                                             # Absent?
-#   Existing(data: string, attrs: uint64)               # Managed? Regular? Owned?
-
-#[
-sdf
-]#
-
-#[
-scenarios:
-
-  case old=Missing:
-    verify there's no old file on disk; fail otherwise
-    return not exists(target file on disk)
-  case old=Existing:
-    return (hash_contents(target file on disk) == expected hash of file in old generation)
-  case old=Unmanaged:
-]#
-
-#[
-
-Algorithm inputs:
- - OLD_GEN -> can be: <missing>, Managed_deleted, Managed_existing (+ contents, attrs)
- - DISK    -> Absent, Found (+ contents, attrs)
- - NEW_GEN -> <missing>, Managed_deleted, Managed_existing (+ contents, attrs), Unmanaged_post (+ contents, attrs)
-              additionally, may have:
-                Unmanaged_pre (+ contents, attrs)
-
- -> can OLD_GEN also have all variants from NEW_GEN? (i.e. Unmanaged_post, Unmanaged_pre?)
-]#
-
-#[
-- first, check based on all files in 1st dir
-- then, based on files in 2nd dir, but skip files existing in 1st (already checked)
-- then, 3rd except 1st & 2nd
-- then, 4th except 1st, 2nd, 3rd
-]#
-
-
+when isMainModule:
+  main()

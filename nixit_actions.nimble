@@ -5,7 +5,7 @@ author        = "Mateusz Czapliński"
 description   = "NixIT file changes checker"
 license       = "Apache-2.0"
 srcDir        = "."
-bin           = @["nixit"]
+bin           = @["nixit_actions"]
 
 
 # Dependencies
