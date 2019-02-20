@@ -1,5 +1,6 @@
 {.experimental: "codeReordering".}
 import patty
+import gara
 
 type
   FileConfusionError* = object of CatchableError
@@ -37,13 +38,18 @@ iterator walkRec(root: Root): (string, FileStatus) =
     followFilter = {pcDir, pcLinkToDir}
   for f in walkDirRec(root / del, yieldFilter, followFilter, true):
     if existsFile(root / exist / f):
-      raise newException(FileConfusionError, "file is present in two places: $#/{del,exist}/$#" % [root, f])
+      raise newException(FileConfusionError, "file must not be present in two places: $#/{del,exist}/$#" % [root, f])
     yield (f, Deleted)
   for f in walkDirRec(root / exist, yieldFilter, followFilter, true):
     yield (f, Existing)
 
 proc has(root: Root, file: string): bool =
-  return existsFile(root / exist / file) or existsFile(root / del / file)
+  let
+    hasdel =   existsFile(root / del / file)
+    hasexist = existsFile(root / exist / file)
+  if hasdel and hasexist:
+    raise newException(FileConfusionError, "file must not be present in two places: $#/{del,exist}/$#" % [root, file])
+  return hasdel or hasexist
 
 
 iterator walkDistinctRec*(roots: Roots): (string, FileStatus) =
